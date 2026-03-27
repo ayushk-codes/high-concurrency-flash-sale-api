@@ -1,0 +1,65 @@
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+
+# Initialize environment variables before establishing connections
+load_dotenv()
+
+# Pull the database connection string from the secure .env file
+raw_url = os.getenv("DATABASE_URL")
+
+if not raw_url:
+    raise ValueError("❌ DATABASE_URL is missing from .env! Cannot establish database connection.")
+
+# --- ENVIRONMENT VARIABLE SANITIZATION ---
+# The following steps act as a resilience layer against common configuration errors 
+# or copy-paste mistakes when deploying across different environments.
+
+# 1. Strip redundant prefix if accidentally included in the .env file
+if "DATABASE_URL=" in raw_url:
+    raw_url = raw_url.replace("DATABASE_URL=", "")
+
+# 2. SQLAlchemy 1.4+ requires 'postgresql://' instead of the older 'postgres://' scheme
+if raw_url.startswith("postgres://"):
+    raw_url = raw_url.replace("postgres://", "postgresql://", 1)
+
+try:
+    # Utilize SQLAlchemy's native URL parser for safe connection string manipulation
+    url_object = make_url(raw_url)
+    
+    # 3. IPv6 Resolution Fix
+    # Explicitly map 'localhost' to the IPv4 loopback address ('127.0.0.1').
+    # This prevents connection timeouts caused by the OS attempting to use IPv6 (::1).
+    if url_object.host == "localhost":
+        url_object = url_object.set(host="127.0.0.1")
+
+    # Safely log the connection attempt without exposing the password
+    print(f"✅ Connection parsed for user: {url_object.username} at {url_object.host}")
+    
+    # Establish the core engine. In a massive production system, connection pooling 
+    # arguments (like pool_size and max_overflow) would be configured here.
+    engine = create_engine(url_object)
+    
+except Exception as e:
+    print(f"❌ DATABASE CONFIG ERROR: {e}")
+    raise
+
+# Configure the session factory to prevent auto-committing unverified transactions
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    """
+    Dependency injection generator for database sessions.
+    Ensures that every API request gets its own isolated session,
+    and guarantees the connection is safely closed after the request completes 
+    (even if an error occurs). This strictly prevents database connection leaks.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

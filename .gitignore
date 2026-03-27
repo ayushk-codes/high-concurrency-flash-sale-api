@@ -1,0 +1,13 @@
+# Ignore the virtual environment (it's too big and people can make their own)
+venv/
+
+# Ignore Python cache files
+__pycache__/
+
+# NEVER UPLOAD SECRETS
+.env
+
+# OS Junk Files
+.DS_Store
+Thumbs.db
+desktop.ini

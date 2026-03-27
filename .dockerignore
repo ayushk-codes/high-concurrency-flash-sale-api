@@ -1,0 +1,11 @@
+# NEVER bake secrets into the Docker image
+.env
+
+# Ignore local virtual environments and caches to save space
+venv/
+env/
+__pycache__/
+
+# OS Junk
+.DS_Store
+Thumbs.db

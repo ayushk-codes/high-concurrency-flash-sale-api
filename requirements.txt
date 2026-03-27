@@ -1,0 +1,23 @@
+# --- CORE WEB FRAMEWORK ---
+# FastAPI for high-performance routing, Uvicorn as the ASGI server, 
+# and Pydantic for strict data validation.
+fastapi
+uvicorn
+pydantic
+
+# --- DATABASE & ORM ---
+# SQLAlchemy for database interaction and psycopg2 as the PostgreSQL adapter.
+sqlalchemy
+psycopg2-binary
+
+# --- SECURITY & AUTHENTICATION ---
+# PyJWT for stateless session tokens, Bcrypt for password hashing, 
+# and multipart for handling OAuth2 form data during login.
+pyjwt
+bcrypt
+python-multipart
+
+# --- ENVIRONMENT & UTILITIES ---
+# Dotenv for secure environment variable loading.
+python-dotenv
+requests

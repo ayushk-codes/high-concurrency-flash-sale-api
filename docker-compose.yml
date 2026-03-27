@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:15
+    container_name: flash_sale_db
+    # Ensures the database automatically recovers if the container crashes
+    restart: always
+    environment:
+      - POSTGRES_USER=admin
+      # CRITICAL SECURITY: Password injected securely from the local .env file.
+      # Never hardcode production credentials in version control.
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=ticket_db
+    ports:
+      - "5432:5432"
+    # Custom healthcheck prevents the API from starting before the database is ready to accept connections.
+    # This completely eliminates startup race conditions.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d ticket_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: flash_sale_api
+    # Strict startup ordering: The API will wait until the DB healthcheck passes.
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # Loads local environment variables for standard configuration
+    env_file:
+      - .env
+    environment:
+      # OVERRIDE: Forces the API to use Docker's internal bridge network ('@db') 
+      # instead of the 'localhost' defined in the .env file.
+      - DATABASE_URL=postgresql://admin:${DB_PASSWORD}@db:5432/ticket_db
