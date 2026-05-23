@@ -6,11 +6,16 @@ from dotenv import load_dotenv
 # Initialize environment variables before loading sensitive components
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import jwt
 from jwt.exceptions import InvalidTokenError
+
+# --- RATE LIMITING IMPORTS ---
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 import models, schemas, utils
 from database import engine, get_db
@@ -22,6 +27,12 @@ app = FastAPI(
     title="Flash Sale API - Pro Edition",
     description="A secure, high-concurrency event ticketing API with background processing."
 )
+
+# --- RATE LIMITING CONFIGURATION ---
+# Tracks limits based on the client's IP address
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configures Swagger UI to expect a Bearer Token for protected routes
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -82,7 +93,13 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 @app.post("/login", response_model=schemas.Token)
-def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    Authenticates a user and returns a JWT.
+    CRITICAL: Protected by a strict 5 requests/minute rate limit to stop brute-force attacks.
+    Requires the raw FastAPI 'request' object for the Limiter to extract the client IP.
+    """
     user = db.query(models.User).filter(models.User.username == user_credentials.username).first()
     
     # Generic error message utilized to prevent username enumeration attacks
@@ -179,8 +196,6 @@ def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, 
     Handles ticket purchases with strict concurrency control.
     Uses pessimistic locking (FOR UPDATE) to prevent race conditions during flash sales.
     """
-    # CRITICAL: `with_for_update()` locks the specific database row until this transaction completes.
-    # This ensures that if 10,000 users try to buy the last ticket simultaneously, only 1 succeeds.
     event = db.query(models.Event).filter(models.Event.id == order.event_id).with_for_update().first()
     
     if not event:
