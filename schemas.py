@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -12,6 +12,21 @@ class UserCreate(BaseModel):
     """
     username: str
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v):
+        """
+        Enforces strict password complexity rules.
+        FastAPI will automatically trap these ValueErrors and return 
+        a 422 Unprocessable Entity with the exact error string.
+        """
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one number")
+        return v
+
 
 class UserResponse(BaseModel):
     """
@@ -28,9 +43,23 @@ class UserResponse(BaseModel):
         # not just standard Python dictionaries.
         from_attributes = True
 
+
 class PasswordUpdate(BaseModel):
     old_password: str
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v):
+        """
+        Ensures the password update route enforces the exact same 
+        cryptographic strength requirements as initial registration.
+        """
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one number")
+        return v
 
 
 # --- AUTHENTICATION DTOs ---
@@ -51,6 +80,7 @@ class EventCreate(BaseModel):
 class EventUpdate(BaseModel):
     additional_tickets: int
 
+
 class EventResponse(BaseModel):
     id: int
     name: str
@@ -59,6 +89,7 @@ class EventResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class EventPaginationResponse(BaseModel):
     """
@@ -78,6 +109,7 @@ class OrderCreate(BaseModel):
     # The client only needs to provide the Event ID; 
     # the User ID is securely extracted from the JWT token on the backend.
     event_id: int
+
 
 class OrderResponse(BaseModel):
     id: int
