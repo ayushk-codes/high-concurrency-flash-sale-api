@@ -152,6 +152,27 @@ def delete_event(id: int, db: Session = Depends(get_db), current_user: models.Us
 
 # --- TICKETING & CONCURRENCY CORE ---
 
+@app.get("/orders/me", response_model=List[schemas.OrderResponse])
+def get_my_orders(
+    skip: int = 0,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Fetches the authenticated user's order history.
+    Strictly scoped to the current_user to prevent IDOR vulnerabilities.
+    Includes pagination (skip/limit) to protect server memory.
+    """
+    orders = (
+        db.query(models.Order)
+        .filter(models.Order.user_id == current_user.id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return orders
+
 @app.post("/orders", response_model=schemas.OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """
@@ -171,6 +192,8 @@ def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, 
     new_order = models.Order(user_id=current_user.id, event_id=event.id, status="confirmed")
     db.add(new_order)
     db.commit()
+    
+    # Refreshing automatically pulls the newly generated UTC timestamp from the database
     db.refresh(new_order)
     
     # Hand off heavy processing to the background worker so the API responds instantly
