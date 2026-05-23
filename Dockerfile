@@ -1,7 +1,7 @@
 # ARCHITECTURAL NOTE: Using the 'slim' variant. 
 # This strips out unnecessary Debian compilation tools (like gcc), 
 # which drastically reduces both the final image size and the security attack surface.
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # Establish the working directory for all subsequent commands
 WORKDIR /app
