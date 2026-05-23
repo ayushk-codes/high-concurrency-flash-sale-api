@@ -8,11 +8,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- CRYPTOGRAPHIC CONFIGURATION ---
-# These values are securely injected from the local .env file.
-# They form the backbone of the application's stateless authentication system.
+# These values form the backbone of the application's stateless authentication system.
+
+# Safe defaults for non-sensitive configuration parameters
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+# Strict security guardrail: Fail-fast if the master secret is missing
 SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+if not SECRET_KEY:
+    raise ValueError("🚨 CRITICAL ERROR: SECRET_KEY is missing from environment variables. Halting server startup to prevent insecure state.")
 
 
 # --- PASSWORD CRYPTOGRAPHY (BCRYPT) ---
