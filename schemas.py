@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime
 
 # --- USER DTOs (Data Transfer Objects) ---
 
@@ -83,6 +84,8 @@ class OrderResponse(BaseModel):
     user_id: int
     event_id: int
     status: str
+    # Provides the exact UTC timestamp of purchase for frontend rendering and sorting
+    created_at: datetime
 
     class Config:
         from_attributes = True
