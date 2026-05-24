@@ -21,7 +21,7 @@ import models, schemas, utils
 from database import engine, get_db
 
 # Ensure database schema is synced with ORM models on startup
-models.Base.metadata.create_all(bind=engine)
+#models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Flash Sale API - Pro Edition",
