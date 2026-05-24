@@ -8,7 +8,8 @@ load_dotenv()
 
 # --- CONFIGURATION ---
 # Targets the local development environment for load testing
-URL = "http://127.0.0.1:8000/orders"
+# CRITICAL: Updated to use the new /api/v1/ routing namespace
+URL = "http://127.0.0.1:8000/api/v1/orders"
 
 # SECURITY: Pulls the JWT token from the local .env file.
 # NEVER hardcode a real token directly into this file before committing to Git.
