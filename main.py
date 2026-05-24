@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # Initialize environment variables before loading sensitive components
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import jwt
@@ -35,7 +35,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configures Swagger UI to expect a Bearer Token for protected routes
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+# CRITICAL: Updated to reflect the new V1 versioned path
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/login")
+
+# --- API VERSIONING ---
+# Centralized router for all V1 endpoints to ensure backwards compatibility
+router = APIRouter(prefix="/api/v1")
 
 
 # --- CORE SECURITY DEPENDENCIES ---
@@ -79,7 +84,7 @@ def generate_and_send_ticket(username: str, event_name: str):
 
 # --- IDENTITY MANAGEMENT ROUTES ---
 
-@app.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     # Enforce unique usernames at the application level
     if db.query(models.User).filter(models.User.username == user.username).first():
@@ -92,7 +97,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-@app.post("/login", response_model=schemas.Token)
+@router.post("/login", response_model=schemas.Token)
 @limiter.limit("5/minute")
 def login(request: Request, user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
@@ -109,11 +114,11 @@ def login(request: Request, user_credentials: OAuth2PasswordRequestForm = Depend
     access_token = utils.create_access_token(data={"user_id": user.id})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/users/me", response_model=schemas.UserResponse)
+@router.get("/users/me", response_model=schemas.UserResponse)
 def get_user_profile(current_user: models.User = Depends(get_current_user)):
     return current_user
 
-@app.put("/users/change-password")
+@router.put("/users/change-password")
 def change_password(data: schemas.PasswordUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # Require old password confirmation to prevent unauthorized takeovers if an active session is hijacked
     if not utils.verify_password(data.old_password, current_user.password_hash):
@@ -126,7 +131,7 @@ def change_password(data: schemas.PasswordUpdate, db: Session = Depends(get_db),
 
 # --- EVENT CATALOG ROUTES ---
 
-@app.get("/events", response_model=schemas.EventPaginationResponse)
+@router.get("/events", response_model=schemas.EventPaginationResponse)
 def get_events(db: Session = Depends(get_db), skip: int = 0, limit: int = 10, search: Optional[str] = None):
     """
     Retrieves events utilizing limit/offset pagination to prevent memory overload.
@@ -140,7 +145,7 @@ def get_events(db: Session = Depends(get_db), skip: int = 0, limit: int = 10, se
     events = query.offset(skip).limit(limit).all()
     return {"total_events": total_count, "limit": limit, "skip": skip, "events": events}
 
-@app.post("/events", response_model=schemas.EventResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/events", response_model=schemas.EventResponse, status_code=status.HTTP_201_CREATED)
 def create_event(event: schemas.EventCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # Role-Based Access Control (RBAC): Gatekeep creation
     if not current_user.is_admin:
@@ -152,7 +157,7 @@ def create_event(event: schemas.EventCreate, db: Session = Depends(get_db), curr
     db.refresh(new_event)
     return new_event
 
-@app.delete("/events/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/events/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_event(id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # Role-Based Access Control (RBAC): Gatekeep deletion
     if not current_user.is_admin:
@@ -169,7 +174,7 @@ def delete_event(id: int, db: Session = Depends(get_db), current_user: models.Us
 
 # --- TICKETING & CONCURRENCY CORE ---
 
-@app.get("/orders/me", response_model=List[schemas.OrderResponse])
+@router.get("/orders/me", response_model=List[schemas.OrderResponse])
 def get_my_orders(
     skip: int = 0,
     limit: int = 10,
@@ -190,7 +195,7 @@ def get_my_orders(
     )
     return orders
 
-@app.post("/orders", response_model=schemas.OrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/orders", response_model=schemas.OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """
     Handles ticket purchases with strict concurrency control.
@@ -215,3 +220,8 @@ def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, 
     background_tasks.add_task(generate_and_send_ticket, current_user.username, event.name)
     
     return new_order
+
+
+# --- BIND ROUTER TO APP ---
+# This single command mounts all the routes above onto the /api/v1 prefix
+app.include_router(router)
