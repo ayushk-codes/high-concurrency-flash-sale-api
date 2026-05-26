@@ -1,10 +1,19 @@
 import os
 import time
+import logging
 from typing import List, Optional
 from dotenv import load_dotenv
 
 # Initialize environment variables before loading sensitive components
 load_dotenv()
+
+# NOTE: Standardizing output for centralized log aggregation.
+# As the entry point, this file defines the root formatting rules for the entire application.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -77,9 +86,9 @@ def generate_and_send_ticket(username: str, event_name: str):
     Simulates a time-consuming I/O bound task (e.g., PDF generation, SMTP email).
     Offloading this ensures the main API thread remains unblocked during high-traffic spikes.
     """
-    print(f"\n⏳ [BACKGROUND WORKER] Starting PDF generation for {username}...")
+    logger.info(f"Background worker: starting PDF generation for {username}")
     time.sleep(5) 
-    print(f"📧 [BACKGROUND WORKER] SUCCESS: Ticket securely emailed to {username} for '{event_name}'!\n")
+    logger.info(f"Background worker: successfully emailed ticket to {username} for '{event_name}'")
 
 
 # --- IDENTITY MANAGEMENT ROUTES ---
