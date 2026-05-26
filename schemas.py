@@ -1,6 +1,7 @@
 from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
+from decimal import Decimal
 
 # --- USER DTOs (Data Transfer Objects) ---
 
@@ -76,6 +77,7 @@ class EventCreate(BaseModel):
     # Strictly limits what an admin can specify when creating an event
     name: str
     total_tickets: int
+    price: Decimal
 
 class EventUpdate(BaseModel):
     additional_tickets: int
@@ -86,6 +88,7 @@ class EventResponse(BaseModel):
     name: str
     total_tickets: int
     available_tickets: int
+    price: Decimal
 
     class Config:
         from_attributes = True
