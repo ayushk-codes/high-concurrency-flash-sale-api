@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from database import Base
@@ -36,6 +36,9 @@ class Event(Base):
     
     # This column acts as the critical state for our pessimistic locking mechanism
     available_tickets = Column(Integer)
+    
+    # CRITICAL: server_default="0.00" prevents migration crashes on existing rows
+    price = Column(Numeric(10, 2), nullable=False, server_default="0.00")
 
 class Order(Base):
     """
