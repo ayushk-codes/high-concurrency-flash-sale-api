@@ -19,6 +19,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - db_data:/var/lib/postgresql/data # CHANGE 1: Maps DB data to a persistent volume
 
   web:
     build: .
@@ -40,3 +42,7 @@ services:
       # OVERRIDE: Forces the API to use Docker's internal bridge network ('@db')
       # instead of the 'localhost' defined in the .env file.
       - DATABASE_URL=postgresql://admin:${DB_PASSWORD}@db:5432/ticket_db
+
+# CHANGE 2: Declares the named volume globally at the root level
+volumes:
+  db_data:
