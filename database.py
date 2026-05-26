@@ -1,9 +1,14 @@
 import os
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+
+# NOTE: Standardizing output for centralized log aggregation.
+# This logger automatically inherits formatting rules defined in the main entry point.
+logger = logging.getLogger(__name__)
 
 # Initialize environment variables before establishing connections
 load_dotenv()
@@ -12,7 +17,7 @@ load_dotenv()
 raw_url = os.getenv("DATABASE_URL")
 
 if not raw_url:
-    raise ValueError("❌ DATABASE_URL is missing from .env! Cannot establish database connection.")
+    raise ValueError("DATABASE_URL is missing from .env! Cannot establish database connection.")
 
 # --- ENVIRONMENT VARIABLE SANITIZATION ---
 # The following steps act as a resilience layer against common configuration errors 
@@ -37,14 +42,15 @@ try:
         url_object = url_object.set(host="127.0.0.1")
 
     # Safely log the connection attempt without exposing the password
-    print(f"✅ Connection parsed for user: {url_object.username} at {url_object.host}")
+    logger.info(f"Database connection parsed for user: {url_object.username} at {url_object.host}")
     
     # Establish the core engine. In a massive production system, connection pooling 
     # arguments (like pool_size and max_overflow) would be configured here.
     engine = create_engine(url_object)
     
 except Exception as e:
-    print(f"❌ DATABASE CONFIG ERROR: {e}")
+    # logger.exception automatically captures and appends the full stack trace for debugging
+    logger.exception("Database configuration failed to parse or connect.")
     raise
 
 # Configure the session factory to prevent auto-committing unverified transactions
