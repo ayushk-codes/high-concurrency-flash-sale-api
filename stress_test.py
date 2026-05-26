@@ -1,69 +1,55 @@
+import asyncio
+import aiohttp
 import os
-import threading
-import requests
+import time
 from dotenv import load_dotenv
 
-# Initialize environment variables to pull the test token securely
+# Load environment variables
 load_dotenv()
 
-# --- CONFIGURATION ---
-# Targets the local development environment for load testing
-# CRITICAL: Updated to use the new /api/v1/ routing namespace
+# Configuration
 URL = "http://127.0.0.1:8000/api/v1/orders"
+TOKEN_PLACEHOLDER = "YOUR_TEST_JWT_TOKEN_HERE"
+TOKEN = os.getenv("TEST_ACCESS_TOKEN", TOKEN_PLACEHOLDER)
+EVENT_ID = 1
+CONCURRENT_USERS = 50
 
-# SECURITY: Pulls the JWT token from the local .env file.
-# NEVER hardcode a real token directly into this file before committing to Git.
-# If no token is found in .env, it defaults to the placeholder.
-TOKEN = os.getenv("TEST_ACCESS_TOKEN", "PASTE_YOUR_ACCESS_TOKEN_HERE") 
-EVENT_ID = 1 
-
-HEADERS = {
-    "Authorization": f"Bearer {TOKEN}"
-}
-PAYLOAD = {
-    "event_id": EVENT_ID
-}
-
-# --- THE WORKER ---
-def buy_ticket(bot_number):
+async def buy_ticket(session, bot_number):
     """
-    Simulates an individual user attempting to purchase a ticket.
-    Fires a POST request to the API and logs the resolution.
+    Simulates a single user attempting to purchase a ticket asynchronously.
     """
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    payload = {"event_id": EVENT_ID}
+    
     try:
-        response = requests.post(URL, json=PAYLOAD, headers=HEADERS)
-        
-        if response.status_code == 201:
-            print(f"✅ Bot {bot_number}: SUCCESS! Got a ticket.")
-        else:
-            # Extracts the exact API error (e.g., "Sold out!")
-            error_msg = response.json().get('detail', 'Unknown Error')
-            print(f"❌ Bot {bot_number}: FAILED. ({error_msg})")
-            
-    except requests.exceptions.RequestException as e:
-        print(f"⚠️ Bot {bot_number}: CONNECTION ERROR. ({e})")
+        async with session.post(URL, json=payload, headers=headers) as resp:
+            if resp.status == 201:
+                print(f"✅ Bot {bot_number:02d}: SUCCESS - Ticket Acquired")
+            else:
+                data = await resp.json()
+                error_msg = data.get('detail', 'Unknown Error')
+                print(f"❌ Bot {bot_number:02d}: FAILED  - {error_msg}")
+                
+    except aiohttp.ClientError as e:
+        print(f"⚠️ Bot {bot_number:02d}: CONNECTION ERROR. ({e})")
 
-# --- THE LOAD TEST ORCHESTRATOR ---
-if __name__ == "__main__":
-    if TOKEN == "PASTE_YOUR_ACCESS_TOKEN_HERE":
-        print("⚠️ WARNING: You need to provide a valid JWT Token to run this test!")
+async def main():
+    # DX: Warn the user if they forgot to configure their environment
+    if TOKEN == TOKEN_PLACEHOLDER:
+        print("⚠️  WARNING: You need to provide a valid JWT Token to run this test!")
         print("Please add TEST_ACCESS_TOKEN=your_real_token to your .env file.\n")
+        
+    print(f"🚀 Launching Async Stress Test: {CONCURRENT_USERS} simultaneous users...\n")
+    start_time = time.time()
+    
+    async with aiohttp.ClientSession() as session:
+        tasks = [buy_ticket(session, i) for i in range(1, CONCURRENT_USERS + 1)]
+        await asyncio.gather(*tasks)
+        
+    duration = time.time() - start_time
+    print(f"\n⏱️  Test completed in {duration:.2f} seconds.")
 
-    print("🚀 Firing 50 concurrent requests to test database row locks...")
-    threads = []
-
-    # ARCHITECTURAL NOTE: 
-    # By spawning 50 threads almost simultaneously, we intentionally try to create 
-    # a 'Race Condition'. If the API's 'SELECT FOR UPDATE' pessimistic lock in main.py 
-    # is working correctly, only the exact number of available tickets will return 
-    # SUCCESS, and the rest will hit the "Sold out!" failure state.
-    for i in range(1, 51):
-        t = threading.Thread(target=buy_ticket, args=(i,))
-        threads.append(t)
-        t.start()
-
-    # Block the main thread until all bots have completed their network requests
-    for t in threads:
-        t.join()
-
-    print("🏁 Stress test complete!")
+if __name__ == "__main__":
+    if os.name == 'nt':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(main())
