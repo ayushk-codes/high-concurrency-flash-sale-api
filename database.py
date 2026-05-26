@@ -19,6 +19,13 @@ raw_url = os.getenv("DATABASE_URL")
 if not raw_url:
     raise ValueError("DATABASE_URL is missing from .env! Cannot establish database connection.")
 
+# --- DYNAMIC CONNECTION POOL CONFIGURATION ---
+# Pull limits from .env to adapt to different deployment environments.
+# Defaults are safely clamped to 5 and 10 to ensure out-of-the-box compatibility 
+# with strict free-tier cloud databases (e.g., Render's 25 max connection limit).
+POOL_SIZE = int(os.getenv("POOL_SIZE", "5"))
+MAX_OVERFLOW = int(os.getenv("MAX_OVERFLOW", "10"))
+
 # --- ENVIRONMENT VARIABLE SANITIZATION ---
 # The following steps act as a resilience layer against common configuration errors 
 # or copy-paste mistakes when deploying across different environments.
@@ -44,9 +51,15 @@ try:
     # Safely log the connection attempt without exposing the password
     logger.info(f"Database connection parsed for user: {url_object.username} at {url_object.host}")
     
-    # Establish the core engine. In a massive production system, connection pooling 
-    # arguments (like pool_size and max_overflow) would be configured here.
-    engine = create_engine(url_object)
+    # --- CONNECTION POOL TUNING ---
+    # Explicitly configured for high-concurrency "Flash Sale" loads.
+    engine = create_engine(
+        url_object,
+        pool_size=POOL_SIZE,        # Dynamic: Connections kept open permanently
+        max_overflow=MAX_OVERFLOW,  # Dynamic: Extra connections allowed under peak load
+        pool_timeout=30,            # Seconds to wait before raising an error
+        pool_pre_ping=True          # Test connections before using (handles DB restarts)
+    )
     
 except Exception as e:
     # logger.exception automatically captures and appends the full stack trace for debugging
