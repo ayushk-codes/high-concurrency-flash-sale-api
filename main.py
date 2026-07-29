@@ -93,8 +93,12 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
+
+# Configurable rate limit (Defaults to 5/min for production security, overridable in tests)
+LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "5/minute")
+
 @router.post("/login", response_model=schemas.Token)
-@limiter.limit("5/minute")
+@limiter.limit(LOGIN_RATE_LIMIT)
 def login(request: Request, user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.username == user_credentials.username).first()
     
