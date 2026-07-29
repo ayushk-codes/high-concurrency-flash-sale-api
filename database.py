@@ -2,7 +2,7 @@ import os
 import logging
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
