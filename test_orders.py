@@ -44,3 +44,32 @@ async def test_purchase_sold_out_event(normal_user_client: AsyncClient, test_eve
     # The API should reject it with 400 Bad Request
     assert response.status_code == 400
     assert "sold out" in response.json()["detail"].lower()
+
+
+async def test_get_my_orders_pagination_and_isolation(
+    normal_user_client: AsyncClient, 
+    admin_client: AsyncClient, 
+    test_event: int
+):
+    """Test that order history enforces pagination and strict user isolation (IDOR prevention)."""
+    
+    # 1. Normal user buys both available tickets for the test event
+    await normal_user_client.post(ORDERS_URL, json={"event_id": test_event})
+    await normal_user_client.post(ORDERS_URL, json={"event_id": test_event})
+    
+    # 2. Fetch order history with limit=1 (Testing pagination)
+    response_paginated = await normal_user_client.get(f"{ORDERS_URL}/me?limit=1&skip=0")
+    assert response_paginated.status_code == 200
+    orders_page = response_paginated.json()
+    assert len(orders_page) == 1
+
+    # 3. Fetch all orders for the normal user
+    response_all = await normal_user_client.get(f"{ORDERS_URL}/me")
+    assert response_all.status_code == 200
+    all_orders = response_all.json()
+    assert len(all_orders) == 2
+
+    # 4. Verify IDOR / User Isolation: Admin client should see 0 orders since they bought none
+    admin_orders_response = await admin_client.get(f"{ORDERS_URL}/me")
+    assert admin_orders_response.status_code == 200
+    assert len(admin_orders_response.json()) == 0
