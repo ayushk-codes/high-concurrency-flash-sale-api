@@ -57,6 +57,7 @@ async def async_client():
     ) as client:
         yield client
 
+
 @pytest_asyncio.fixture(scope="function")
 async def normal_user_client(async_client: AsyncClient):
     """Creates a standard user, logs them in, and returns an authenticated client."""
@@ -74,11 +75,18 @@ async def normal_user_client(async_client: AsyncClient):
 
 @pytest_asyncio.fixture(scope="function")
 async def admin_client(async_client: AsyncClient):
-    """Creates an Admin user via a database backdoor, logs them in, and returns an authenticated client."""
+    """
+    Creates an admin user for testing purposes.
+    
+    Note: There is intentionally no API endpoint to grant admin privileges —
+    this is correct security design. For testing admin-only routes, this
+    fixture bypasses the API and directly sets is_admin=True in the isolated
+    test database, which is wiped clean before every test.
+    """
     # 1. Register normally
     await async_client.post("/api/v1/register", json={"username": "admin_user", "password": "StrongPassword123!"})
     
-    # 2. BACKDOOR: Manually flip the is_admin flag in the test database
+    # 2. Directly manipulate the isolated test database
     db = TestingSessionLocal()
     admin_user = db.query(User).filter(User.username == "admin_user").first()
     admin_user.is_admin = True
