@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 from decimal import Decimal
@@ -39,10 +39,9 @@ class UserResponse(BaseModel):
     username: str
     is_admin: bool
 
-    class Config:
-        # NOTE: Tells Pydantic to read data directly from SQLAlchemy ORM objects,
-        # not just standard Python dictionaries.
-        from_attributes = True
+    # NOTE: Tells Pydantic to read data directly from SQLAlchemy ORM objects,
+    # not just standard Python dictionaries.
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PasswordUpdate(BaseModel):
@@ -90,8 +89,7 @@ class EventResponse(BaseModel):
     available_tickets: int
     price: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EventPaginationResponse(BaseModel):
@@ -122,5 +120,4 @@ class OrderResponse(BaseModel):
     # Provides the exact UTC timestamp of purchase for frontend rendering and sorting
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
