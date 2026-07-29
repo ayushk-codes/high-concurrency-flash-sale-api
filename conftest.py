@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from models import User
 
 load_dotenv()
 
@@ -55,3 +56,39 @@ async def async_client():
         base_url="http://test"
     ) as client:
         yield client
+
+@pytest_asyncio.fixture(scope="function")
+async def normal_user_client(async_client: AsyncClient):
+    """Creates a standard user, logs them in, and returns an authenticated client."""
+    # 1. Register
+    await async_client.post("/api/v1/register", json={"username": "normal_user", "password": "StrongPassword123!"})
+    
+    # 2. Login
+    response = await async_client.post("/api/v1/login", data={"username": "normal_user", "password": "StrongPassword123!"})
+    token = response.json()["access_token"]
+    
+    # 3. Attach token to client headers
+    async_client.headers.update({"Authorization": f"Bearer {token}"})
+    return async_client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_client(async_client: AsyncClient):
+    """Creates an Admin user via a database backdoor, logs them in, and returns an authenticated client."""
+    # 1. Register normally
+    await async_client.post("/api/v1/register", json={"username": "admin_user", "password": "StrongPassword123!"})
+    
+    # 2. BACKDOOR: Manually flip the is_admin flag in the test database
+    db = TestingSessionLocal()
+    admin_user = db.query(User).filter(User.username == "admin_user").first()
+    admin_user.is_admin = True
+    db.commit()
+    db.close()
+    
+    # 3. Login
+    response = await async_client.post("/api/v1/login", data={"username": "admin_user", "password": "StrongPassword123!"})
+    token = response.json()["access_token"]
+    
+    # 4. Attach token to client headers
+    async_client.headers.update({"Authorization": f"Bearer {token}"})
+    return async_client
