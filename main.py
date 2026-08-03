@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -31,6 +32,17 @@ from database import engine, get_db
 app = FastAPI(
     title="Flash Sale API - Pro Edition",
     description="A secure, high-concurrency event ticketing API with background processing."
+)
+
+# --- CORS CONFIGURATION ---
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_URL],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- RATE LIMITING CONFIGURATION ---
@@ -178,11 +190,13 @@ def get_my_orders(
     orders = (
         db.query(models.Order)
         .filter(models.Order.user_id == current_user.id)
+        .order_by(models.Order.created_at.desc())
         .offset(skip)
         .limit(limit)
         .all()
     )
     return orders
+
 
 @router.post("/orders", response_model=schemas.OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -194,13 +208,32 @@ def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, 
         raise HTTPException(status_code=400, detail="Sold out!")
     
     event.available_tickets -= 1
-    new_order = models.Order(user_id=current_user.id, event_id=event.id, status="confirmed")
+    
+    # Snapshot the name and price directly onto the order at purchase time,
+    # independent of whether the Event row still exists later (see the
+    # ON DELETE SET NULL migration on orders.event_id).
+    new_order = models.Order(
+        user_id=current_user.id,
+        event_id=event.id,
+        status="confirmed",
+        event_name=event.name,
+        event_price=event.price,
+    )
     db.add(new_order)
     db.commit()
     db.refresh(new_order)
     
     background_tasks.add_task(generate_and_send_ticket, current_user.username, event.name)
-    return new_order
+    
+    return schemas.OrderResponse(
+        id=new_order.id,
+        user_id=new_order.user_id,
+        event_id=new_order.event_id,
+        status=new_order.status,
+        created_at=new_order.created_at,
+        event_name=new_order.event_name,
+        event_price=new_order.event_price,
+    )
 
 
 app.include_router(router)
