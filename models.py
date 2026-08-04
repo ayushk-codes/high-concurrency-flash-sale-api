@@ -50,10 +50,14 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     # Foreign keys enforce referential integrity at the database level
     user_id = Column(Integer, ForeignKey("users.id"))
-    event_id = Column(Integer, ForeignKey("events.id"))
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
     status = Column(String)
     
     # UTC timestamp for accurate, timezone-agnostic order tracking and chronological sorting
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Snapshotted at purchase time — independent of whether the Event row still exists later
+    event_name = Column(String, nullable=False)
+    event_price = Column(Numeric(10, 2), nullable=False)
 
     owner = relationship("User", back_populates="orders")
