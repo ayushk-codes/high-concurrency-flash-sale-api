@@ -115,9 +115,14 @@ class OrderCreate(BaseModel):
 class OrderResponse(BaseModel):
     id: int
     user_id: int
-    event_id: int
+    # Nullable because ON DELETE SET NULL fires when the referenced event is
+    # deleted — event_name/event_price stay populated regardless, since they're
+    # snapshotted at purchase time rather than read live from Event.
+    event_id: Optional[int] = None
     status: str
     # Provides the exact UTC timestamp of purchase for frontend rendering and sorting
     created_at: datetime
+    event_name: str
+    event_price: Decimal
 
     model_config = ConfigDict(from_attributes=True)
