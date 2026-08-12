@@ -15,7 +15,8 @@ A companion **React frontend** consumes this API end-to-end (auth, browsing, pur
 - **API Versioning** — all routes live under `/api/v1/`, allowing future breaking changes without disrupting existing clients.
 - **Environment-Driven Configuration** — connection pool sizing, rate limits, background-task delays, and CORS origins are all configurable via environment variables with safe, production-appropriate defaults — never hardcoded.
 - **Automated Test Suite** — 11 tests across 4 files (auth, events/RBAC, orders, concurrency), running against an isolated test database with full parity to production (same PostgreSQL engine, same synchronous driver).
-- **Containerized Infrastructure** — Docker + Docker Compose for identical local and deployed environments.
+- **Real-Time Inventory Updates** — a WebSocket channel per event broadcasts the live ticket count to every connected client the instant a purchase commits, so concurrent buyers see availability change as it happens — no polling, no manual refresh.
+- **Containerized Infrastructure** — Docker + Docker Compose for identical local and deployed environments, running as a non-root user in production for defense-in-depth.
 
 ---
 
@@ -130,18 +131,19 @@ Against an event with, say, 10 tickets remaining: exactly 10 requests succeed, e
 
 All routes are prefixed with `/api/v1`. Full interactive documentation at `/docs`.
 
-| Method   | Endpoint                 | Description                              | Auth  |
-| -------- | ------------------------ | ---------------------------------------- | ----- |
-| `POST`   | `/register`              | Register a new user                      | No    |
-| `POST`   | `/login`                 | Authenticate, receive JWT (rate-limited) | No    |
-| `GET`    | `/users/me`              | Current user's profile                   | Yes   |
-| `PUT`    | `/users/change-password` | Change password                          | Yes   |
-| `GET`    | `/events`                | Paginated, searchable event listing      | No    |
-| `GET`    | `/events/{id}`           | Single event details                     | No    |
-| `POST`   | `/events`                | Create an event                          | Admin |
-| `DELETE` | `/events/{id}`           | Delete an event                          | Admin |
-| `POST`   | `/orders`                | Purchase a ticket                        | Yes   |
-| `GET`    | `/orders/me`             | Your order history                       | Yes   |
+| Method   | Endpoint                 | Description                               | Auth  |
+| -------- | ------------------------ | ----------------------------------------- | ----- |
+| `POST`   | `/register`              | Register a new user                       | No    |
+| `POST`   | `/login`                 | Authenticate, receive JWT (rate-limited)  | No    |
+| `GET`    | `/users/me`              | Current user's profile                    | Yes   |
+| `PUT`    | `/users/change-password` | Change password                           | Yes   |
+| `GET`    | `/events`                | Paginated, searchable event listing       | No    |
+| `GET`    | `/events/{id}`           | Single event details                      | No    |
+| `POST`   | `/events`                | Create an event                           | Admin |
+| `DELETE` | `/events/{id}`           | Delete an event                           | Admin |
+| `POST`   | `/orders`                | Purchase a ticket                         | Yes   |
+| `GET`    | `/orders/me`             | Your order history                        | Yes   |
+| `WS`     | `/ws/events/{event_id}`  | Live ticket-count broadcast for one event | No    |
 
 ---
 
@@ -152,6 +154,8 @@ All routes are prefixed with `/api/v1`. Full interactive documentation at `/docs
 **Order history is snapshotted, not live-joined.** `event_name` and `event_price` are copied onto each order at the moment of purchase, rather than read live from the `Event` table. This means a deleted event never corrupts or erases past order history — a real e-commerce/ticketing pattern, not just a convenience.
 
 **Configuration over hardcoding, everywhere.** Connection pool size, login rate limits, background-task delays, and CORS origins are all environment-driven with safe production defaults — the same values ship to local development, automated tests, and (eventually) production, without code changes between environments.
+
+**Real-time updates are in-memory, not distributed.** The WebSocket connection manager tracks subscribers in a plain in-process dictionary, which is the right call for a single-instance deployment but wouldn't survive horizontal scaling as-is — a second instance's clients wouldn't see broadcasts triggered on the first without adding a shared layer like Redis pub/sub. Noted here as a known, deliberate boundary of the current scale, not an oversight.
 
 ---
 
