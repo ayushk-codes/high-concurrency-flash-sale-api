@@ -20,6 +20,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # local .env files and __pycache__ are not baked into the image.
 COPY . .
 
+# SECURITY: Drop root privileges for the actual running process. Everything
+# above still runs as root (needed to install packages and copy files without
+# permission conflicts), but the server that handles live network traffic
+# from here on runs as an unprivileged user instead.
+RUN useradd --create-home appuser
+USER appuser
+
 # Documentation for developers/orchestrators that this container listens on port 8000
 EXPOSE 8000
 
