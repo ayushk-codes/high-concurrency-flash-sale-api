@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, APIRouter
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request, APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -178,6 +178,54 @@ def delete_event(id: int, db: Session = Depends(get_db), current_user: models.Us
     return
 
 
+# --- REAL-TIME EVENT UPDATES ---
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[int, list[WebSocket]] = {}
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+
+    async def connect(self, websocket: WebSocket, event_id: int):
+        await websocket.accept()
+        self.active_connections.setdefault(event_id, []).append(websocket)
+
+    def disconnect(self, websocket: WebSocket, event_id: int):
+        if event_id in self.active_connections:
+            self.active_connections[event_id].remove(websocket)
+
+    async def _broadcast(self, event_id: int, message: dict):
+        dead = []
+        for ws in self.active_connections.get(event_id, []):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.active_connections[event_id].remove(ws)
+
+    def broadcast(self, event_id: int, message: dict):
+        # create_order below is a sync def, running in FastAPI's threadpool,
+        # not on the event loop — this is what makes calling into an async
+        # broadcast safe from there.
+        if self.loop:
+            asyncio.run_coroutine_threadsafe(self._broadcast(event_id, message), self.loop)
+
+manager = ConnectionManager()
+
+@app.on_event("startup")
+async def capture_loop():
+    manager.loop = asyncio.get_running_loop()
+
+@router.websocket("/ws/events/{event_id}")
+async def event_updates(websocket: WebSocket, event_id: int):
+    await manager.connect(websocket, event_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, event_id)
+
+
 # --- TICKETING & CONCURRENCY CORE ---
 
 @router.get("/orders/me", response_model=List[schemas.OrderResponse])
@@ -222,7 +270,9 @@ def create_order(order: schemas.OrderCreate, background_tasks: BackgroundTasks, 
     db.add(new_order)
     db.commit()
     db.refresh(new_order)
-    
+
+    manager.broadcast(event.id, {"available_tickets": event.available_tickets})
+
     background_tasks.add_task(generate_and_send_ticket, current_user.username, event.name)
     
     return schemas.OrderResponse(
