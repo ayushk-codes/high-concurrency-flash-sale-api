@@ -18,6 +18,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Re
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import jwt
 from jwt.exceptions import InvalidTokenError
 
@@ -101,7 +102,15 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     hashed_pwd = utils.hash_password(user.password)
     new_user = models.User(username=user.username, password_hash=hashed_pwd)
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two requests can both pass the check above before either commits —
+        # this is the database's own unique constraint catching what the
+        # application-level check alone can't, and giving it the same clean
+        # error instead of letting a raw IntegrityError reach the client.
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Username already registered")
     db.refresh(new_user)
     return new_user
 
