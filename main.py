@@ -74,6 +74,12 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user is None:
         raise credentials_exception
+    if not user.is_active:
+        # Deliberately the same generic 401 as an invalid token, not a
+        # distinct "account deactivated" message — a bearer token that no
+        # longer authorizes anything shouldn't reveal *why* to whoever's
+        # holding it, only that it no longer works.
+        raise credentials_exception
     return user
 
 
@@ -126,6 +132,12 @@ def login(request: Request, user_credentials: OAuth2PasswordRequestForm = Depend
     if not user or not utils.verify_password(user_credentials.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
 
+    if not user.is_active:
+        # Checked only after the password already matched: deactivation
+        # status gets revealed exclusively to someone who's proven they know
+        # the real password, never leaked to an unauthenticated guess.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
+
     access_token = utils.create_access_token(data={"user_id": user.id})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -141,6 +153,60 @@ def change_password(data: schemas.PasswordUpdate, db: Session = Depends(get_db),
     current_user.password_hash = utils.hash_password(data.new_password)
     db.commit()
     return {"message": "Password updated successfully"}
+
+
+# --- USER MANAGEMENT (ADMIN) ---
+
+@router.get("/users", response_model=schemas.UserPaginationResponse)
+def get_users(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    skip: int = 0,
+    limit: int = 10,
+    search: Optional[str] = None,
+    is_active: Optional[bool] = None,
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    query = db.query(models.User)
+    if search:
+        query = query.filter(models.User.username.ilike(f"%{search}%"))
+    # None means "no filter, show both" — distinct from explicitly passing
+    # is_active=false, which is a real, deliberate filter for just the
+    # deactivated accounts.
+    if is_active is not None:
+        query = query.filter(models.User.is_active == is_active)
+
+    total_count = query.count()
+    users = query.offset(skip).limit(limit).all()
+    return {"total_users": total_count, "limit": limit, "skip": skip, "users": users}
+
+
+@router.put("/users/{id}/status", response_model=schemas.UserResponse)
+def update_user_status(
+    id: int,
+    status_update: schemas.UserStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Checked before the target even gets looked up: current_user is already
+    # a real, validated row (it came from a decoded JWT), so if id matches
+    # it there's nothing left to look up to know this should be rejected.
+    if id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own account's status")
+
+    target_user = db.query(models.User).filter(models.User.id == id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target_user.is_active = status_update.is_active
+    db.commit()
+    db.refresh(target_user)
+    return target_user
 
 
 # --- EVENT CATALOG ROUTES ---

@@ -38,10 +38,32 @@ class UserResponse(BaseModel):
     id: int
     username: str
     is_admin: bool
+    is_active: bool
 
     # NOTE: Tells Pydantic to read data directly from SQLAlchemy ORM objects,
     # not just standard Python dictionaries.
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserPaginationResponse(BaseModel):
+    """
+    Wrapper schema for paginated user results — same shape as
+    EventPaginationResponse, for the same reason (frontend pagination UI
+    needs the total count, not just one page of rows).
+    """
+    total_users: int
+    limit: int
+    skip: int
+    users: List[UserResponse]
+
+
+class UserStatusUpdate(BaseModel):
+    """
+    Input schema for the admin status-change endpoint. Deliberately an
+    explicit desired state rather than a toggle: calling this twice with the
+    same value is a safe no-op, not a silent reversal of the first call.
+    """
+    is_active: bool
 
 
 class PasswordUpdate(BaseModel):

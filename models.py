@@ -15,7 +15,11 @@ class User(Base):
     # Indexed for rapid O(log n) lookups during the login/authentication flow
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
-    is_admin = Column(Boolean, default=False)  
+    is_admin = Column(Boolean, default=False)
+    # Soft-delete flag: a deactivated user can't log in and any existing
+    # session is rejected on its next request, but every order they ever
+    # placed stays fully intact — no cascade, nothing orphaned.
+    is_active = Column(Boolean, default=True, nullable=False, server_default="true")
 
     # Establishes a bidirectional relationship with the Order ledger
     orders = relationship("Order", back_populates="owner")
@@ -49,6 +53,9 @@ class Order(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     # Foreign keys enforce referential integrity at the database level
+    # No ondelete behavior needed here (unlike event_id below): users are
+    # deactivated via is_active rather than hard-deleted, so this column's
+    # default RESTRICT behavior never actually gets exercised in practice.
     user_id = Column(Integer, ForeignKey("users.id"))
     event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
     status = Column(String)
